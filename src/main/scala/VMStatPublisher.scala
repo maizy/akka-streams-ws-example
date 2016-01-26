@@ -1,7 +1,7 @@
 import java.io.File
 
 import akka.actor._
-import akka.routing.{RemoveRoutee, ActorRefRoutee, AddRoutee}
+import akka.routing.{RemoveRoutee, ActorRefRoutee, AddRoutee, Routee}
 import akka.stream.actor.ActorPublisher
 import play.api.libs.json.Json
 import scala.annotation.tailrec
