@@ -1,19 +1,15 @@
-import java.net.{SocketOptions, Inet4Address, InetAddress, Socket}
 import java.util.concurrent.TimeoutException
-
-import akka.actor.{ActorRef, Props, ActorSystem}
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.util.Random
+import akka.actor.{ ActorRef, Props, ActorSystem }
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.ws._
-import akka.io.Inet
-import akka.routing.BroadcastGroup
-import akka.stream.ActorFlowMaterializer
+import akka.stream.ActorMaterializer
 import akka.stream.scaladsl._
 
-import scala.concurrent.Await
-import scala.concurrent.duration._
-import scala.util.Random
 
 /**
  * Extractor to detect websocket messages. This checks whether the header
@@ -21,7 +17,7 @@ import scala.util.Random
  */
 object WSRequest {
 
-  def unapply(req: HttpRequest) : Option[HttpRequest] = {
+  def unapply(req: HttpRequest): Option[HttpRequest] = {
     if (req.header[UpgradeToWebsocket].isDefined) {
       req.header[UpgradeToWebsocket] match {
         case Some(upgrade) => Some(req)
@@ -41,47 +37,51 @@ object WSServer extends App {
 
   // required actorsystem and flow materializer
   implicit val system = ActorSystem("websockets")
-  implicit val fm = ActorFlowMaterializer()
+  implicit val materializer = ActorMaterializer()
 
   // setup the actors for the stats
   // router: will keep a list of connected actorpublisher, to inform them about new stats.
   // vmactor: will start sending messages to the router, which will pass them on to any
   // connected routee
   val router: ActorRef = system.actorOf(Props[RouterActor], "router")
-  val vmactor: ActorRef = system.actorOf(Props(classOf[VMActor], router ,2 seconds, 20 milliseconds))
+  val vmactor: ActorRef = system.actorOf(Props(classOf[VMActor], router, 2.seconds, 20.milliseconds))
 
   // Bind to an HTTP port and handle incoming messages.
   // With the custom extractor we're always certain the header contains
   // the correct upgrade message.
   // We can pass in a socketoptions to tune the buffer behavior
   // e.g options =  List(Inet.SO.SendBufferSize(100))
-  val binding = Http().bindAndHandleSync({
+  val binding = Http().bindAndHandleSync(
+    {
+      case WSRequest(req@HttpRequest(GET, Uri.Path("/simple"), _, _, _)) => handleWith(req, Flows.reverseFlow)
+  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/echo"), _, _, _)) => handleWith(req, Flows.echoFlow)
+  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/graph"), _, _, _)) => handleWith(req, Flows.graphFlow)
+  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/graphWithSource"), _, _, _)) => handleWith(req, Flows.graphFlowWithExtraSource)
+  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/stats"), _, _, _)) => handleWith(req, Flows.graphFlowWithStats(router))
+      case _: HttpRequest => HttpResponse(400, entity = "Invalid websocket request")
 
-    case WSRequest(req@HttpRequest(GET, Uri.Path("/simple"), _, _, _)) => handleWith(req, Flows.reverseFlow)
-    case WSRequest(req@HttpRequest(GET, Uri.Path("/echo"), _, _, _)) => handleWith(req, Flows.echoFlow)
-    case WSRequest(req@HttpRequest(GET, Uri.Path("/graph"), _, _, _)) => handleWith(req, Flows.graphFlow)
-    case WSRequest(req@HttpRequest(GET, Uri.Path("/graphWithSource"), _, _, _)) => handleWith(req, Flows.graphFlowWithExtraSource)
-    case WSRequest(req@HttpRequest(GET, Uri.Path("/stats"), _, _, _)) => handleWith(req, Flows.graphFlowWithStats(router))
-    case _: HttpRequest => HttpResponse(400, entity = "Invalid websocket request")
-
-  }, interface = "localhost", port = 9001)
+    },
+    interface = "localhost",
+    port = 9001
+  )
 
 
 
   // binding is a future, we assume it's ready within a second or timeout
   try {
-    Await.result(binding, 1 second)
+    Await.result(binding, 1.second)
     println("Server online at http://localhost:9001")
   } catch {
     case exc: TimeoutException =>
       println("Server took to long to startup, shutting down")
-      system.shutdown()
+      system.terminate()
   }
 
   /**
    * Simple helper function, that connects a flow to a specific websocket upgrade request
    */
-  def handleWith(req: HttpRequest, flow: Flow[Message, Message, Unit]) = req.header[UpgradeToWebsocket].get.handleMessages(flow)
+  def handleWith(req: HttpRequest, flow: Flow[Message, Message, Unit]): HttpResponse =
+    req.header[UpgradeToWebsocket].get.handleMessages(flow)
 
 }
 
@@ -119,13 +119,9 @@ object Flows {
    * We broadcast the message to three map functions, we
    * then zip them all up, and map them to the response
    * message which we return.
-   *
-   * @return
    */
-  def graphFlow: Flow[Message, Message, Unit] = {
-    Flow() { implicit b =>
-
-      import FlowGraph.Implicits._
+  /* def graphFlow: Flow[Message, Message, Unit] = RunnableGraph.fromGraph(GraphDSL.create() { implicit b =>
+      import GraphDSL.Implicits._
 
       val collect = b.add(Flow[Message].collect[String]({
         case TextMessage.Strict(txt) => txt
@@ -148,8 +144,8 @@ object Flows {
       zip.out ~> mapToMessage
 
       (collect.inlet, mapToMessage.outlet)
-    }
-  }
+    })
+    */
 
   /**
    * When the flow is materialized we don't really just have to respond with a single
@@ -163,11 +159,8 @@ object Flows {
    *           newSource ~> merge ~> map
    * This flow filters out the incoming messages, and the merge will only see messages
    * from our new flow. All these messages get sent to the connected websocket.
-   *
-   *
-   * @return
    */
-  def graphFlowWithExtraSource: Flow[Message, Message, Unit] = {
+  /* def graphFlowWithExtraSource: Flow[Message, Message, Unit] = {
     Flow() { implicit b =>
       import FlowGraph.Implicits._
 
@@ -190,7 +183,7 @@ object Flows {
       // expose ports
       (mapMsgToInt.inlet, mapIntToMsg.outlet)
     }
-  }
+  } */
 
   /**
    * Creates a flow which uses the provided source as additional input. This complete scenario
@@ -199,7 +192,7 @@ object Flows {
    *  2. the VMActor sends messages at an interval to the router.
    *  3. The router next sends the message to this source which injects it into the flow
    */
- def graphFlowWithStats(router: ActorRef): Flow[Message, Message, Unit] = {
+ /* def graphFlowWithStats(router: ActorRef): Flow[Message, Message, Unit] = {
     Flow() { implicit b =>
       import FlowGraph.Implicits._
 
@@ -223,9 +216,10 @@ object Flows {
       // expose ports
       (mapMsgToString.inlet, mapStringToMsg.outlet)
     }
-  }
+  }*/
 
-  def randomPrintableString(length: Int, start:String = ""): String = {
-    if (length == 0) start else randomPrintableString(length -1, start + Random.nextPrintableChar())
+  @annotation.tailrec
+  def randomPrintableString(length: Int, start: String = ""): String = {
+    if (length == 0) start else randomPrintableString(length - 1, start + Random.nextPrintableChar())
   }
 }

@@ -1,11 +1,12 @@
 import java.io.File
 
-import akka.actor._
-import akka.routing.{RemoveRoutee, ActorRefRoutee, AddRoutee, Routee}
-import akka.stream.actor.ActorPublisher
-import play.api.libs.json.Json
+import scala.collection.mutable
 import scala.annotation.tailrec
 import scala.concurrent.duration._
+import akka.actor._
+import akka.routing.{ RemoveRoutee, ActorRefRoutee, AddRoutee, Routee }
+import akka.stream.actor.ActorPublisher
+import play.api.libs.json.Json
 
 /**
  * for now a very simple actor, which keeps a separate buffer
@@ -19,12 +20,11 @@ class VMStatsPublisher(router: ActorRef) extends ActorPublisher[String] {
   case class QueueUpdated()
 
   import akka.stream.actor.ActorPublisherMessage._
-  import scala.collection.mutable
 
   val MaxBufferSize = 50
   val queue = mutable.Queue[String]()
 
-  var queueUpdated = false;
+  var queueUpdated = false
 
   // on startup, register with routee
   override def preStart() {
@@ -76,11 +76,11 @@ class VMStatsPublisher(router: ActorRef) extends ActorPublisher[String] {
       println(s"No more demand for: $this")
     }
 
-    if (queue.size == 0 && totalDemand != 0) {
+    if (queue.isEmpty && totalDemand != 0) {
       // we can response to queueupdated msgs again, since
       // we can't do anything until our queue contains stuff again.
       queueUpdated = false
-    } else if (totalDemand > 0 && queue.size > 0) {
+    } else if (totalDemand > 0 && queue.nonEmpty) {
       onNext(queue.dequeue())
       deliver()
     }
@@ -114,9 +114,9 @@ class VMActor(router: ActorRef, delay: FiniteDuration, interval: FiniteDuration)
     )
 
     val roots = File.listRoots()
-    val totalSpaceMap = roots.map(root => s"count.fs.total.${root.getAbsolutePath}" -> root.getTotalSpace) toMap
-    val freeSpaceMap = roots.map(root => s"count.fs.free.${root.getAbsolutePath}" -> root.getFreeSpace) toMap
-    val usuableSpaceMap = roots.map(root => s"count.fs.usuable.${root.getAbsolutePath}" -> root.getUsableSpace) toMap
+    val totalSpaceMap = roots.map(root => s"count.fs.total.${root.getAbsolutePath}" -> root.getTotalSpace).toMap
+    val freeSpaceMap = roots.map(root => s"count.fs.free.${root.getAbsolutePath}" -> root.getFreeSpace).toMap
+    val usuableSpaceMap = roots.map(root => s"count.fs.usuable.${root.getAbsolutePath}" -> root.getUsableSpace).toMap
 
     baseStats ++ totalSpaceMap ++ freeSpaceMap ++ usuableSpaceMap
   }
