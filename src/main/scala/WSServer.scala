@@ -56,7 +56,7 @@ object WSServer extends App {
       case WSRequest(req@HttpRequest(GET, Uri.Path("/simple"), _, _, _)) => handleWith(req, Flows.reverseFlow)
       case WSRequest(req@HttpRequest(GET, Uri.Path("/echo"), _, _, _)) => handleWith(req, Flows.echoFlow)
       case WSRequest(req@HttpRequest(GET, Uri.Path("/graph"), _, _, _)) => handleWith(req, Flows.graphFlow)
-  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/graphWithSource"), _, _, _)) => handleWith(req, Flows.graphFlowWithExtraSource)
+      case WSRequest(req@HttpRequest(GET, Uri.Path("/graphWithSource"), _, _, _)) => handleWith(req, Flows.graphFlowWithExtraSource)
   //    case WSRequest(req@HttpRequest(GET, Uri.Path("/stats"), _, _, _)) => handleWith(req, Flows.graphFlowWithStats(router))
       case _: HttpRequest => HttpResponse(400, entity = "Invalid websocket request")
 
@@ -157,33 +157,37 @@ object Flows {
    *
    *        in ~> filter ~> merge
    *           newSource ~> merge ~> map
-   * This flow filters out the incoming messages, and the merge will only see messages
-   * from our new flow. All these messages get sent to the connected websocket.
    */
-  /* def graphFlowWithExtraSource: Flow[Message, Message, Unit] = {
-    Flow() { implicit b =>
-      import FlowGraph.Implicits._
+  def graphFlowWithExtraSource: Flow[Message, Message, Unit] =
+    Flow.fromGraph(GraphDSL.create() { implicit b: GraphDSL.Builder[Unit] =>
+      import GraphDSL.Implicits._
 
       // Graph elements we'll use
       val merge = b.add(Merge[Int](2))
-      val filter = b.add(Flow[Int].filter(_ => false))
+      val filter = b.add(Flow[Int].filter(_ != -1))
 
       // convert to int so we can connect to merge
-      val mapMsgToInt = b.add(Flow[Message].map[Int] { msg => -1 })
-      val mapIntToMsg = b.add(Flow[Int].map[Message]( x => TextMessage.Strict(":" + randomPrintableString(200) + ":" + x.toString)))
-      val log = b.add(Flow[Int].map[Int](x => {println(x); x}))
+      val mapMsgToInt = b.add(Flow[Message].map[Int] {
+        case msg: TextMessage.Strict => msg.text.length
+        case _ => -1
+      })
+
+      val mapIntToMsg = b.add(
+        Flow[Int].map[Message]{
+          x => TextMessage.Strict(":" + randomPrintableString(200) + ":" + x.toString)
+        })
+      val log = b.add(Flow[Int].map[Int]{ x => println(x); x })
 
       // source we want to use to send message to the connected websocket sink
-      val rangeSource = b.add(Source(1 to 2000))
+      val rangeSource = b.add(Source(1 to 20))
 
       // connect the graph
-      mapMsgToInt ~> filter ~> merge // this part of the merge will never provide msgs
+      mapMsgToInt ~> filter ~> merge
          rangeSource ~> log ~> merge ~> mapIntToMsg
 
       // expose ports
-      (mapMsgToInt.inlet, mapIntToMsg.outlet)
-    }
-  } */
+      FlowShape(mapMsgToInt.in, mapIntToMsg.out)
+    })
 
   /**
    * Creates a flow which uses the provided source as additional input. This complete scenario
