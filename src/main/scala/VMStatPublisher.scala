@@ -71,7 +71,8 @@ class VMStatsPublisher(router: ActorRef) extends ActorPublisher[String] {
    * that even if we have a slow consumer, we won't notice that immediately. First the
    * buffers will fill up before we get feedback.
    */
-  @tailrec final def deliver(): Unit = {
+  @tailrec
+  final def deliver(): Unit = {
     if (totalDemand == 0) {
       println(s"No more demand for: $this")
     }
