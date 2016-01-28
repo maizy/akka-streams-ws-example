@@ -7,7 +7,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.ws._
-import akka.stream.ActorMaterializer
+import akka.stream.{ FlowShape, ActorMaterializer }
 import akka.stream.scaladsl._
 
 
@@ -54,8 +54,8 @@ object WSServer extends App {
   val binding = Http().bindAndHandleSync(
     {
       case WSRequest(req@HttpRequest(GET, Uri.Path("/simple"), _, _, _)) => handleWith(req, Flows.reverseFlow)
-  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/echo"), _, _, _)) => handleWith(req, Flows.echoFlow)
-  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/graph"), _, _, _)) => handleWith(req, Flows.graphFlow)
+      case WSRequest(req@HttpRequest(GET, Uri.Path("/echo"), _, _, _)) => handleWith(req, Flows.echoFlow)
+      case WSRequest(req@HttpRequest(GET, Uri.Path("/graph"), _, _, _)) => handleWith(req, Flows.graphFlow)
   //    case WSRequest(req@HttpRequest(GET, Uri.Path("/graphWithSource"), _, _, _)) => handleWith(req, Flows.graphFlowWithExtraSource)
   //    case WSRequest(req@HttpRequest(GET, Uri.Path("/stats"), _, _, _)) => handleWith(req, Flows.graphFlowWithStats(router))
       case _: HttpRequest => HttpResponse(400, entity = "Invalid websocket request")
@@ -107,7 +107,7 @@ object Flows {
    * Simple flow which just returns the original message
    * back to the client
    */
-  def echoFlow: Flow[Message, Message, Unit] =  Flow[Message]
+  def echoFlow: Flow[Message, Message, Unit] = Flow[Message]
 
   /**
    * Flow which uses a graph to process the incoming message.
@@ -120,7 +120,8 @@ object Flows {
    * then zip them all up, and map them to the response
    * message which we return.
    */
-  /* def graphFlow: Flow[Message, Message, Unit] = RunnableGraph.fromGraph(GraphDSL.create() { implicit b =>
+  def graphFlow: Flow[Message, Message, Unit] =
+    Flow.fromGraph(GraphDSL.create() { implicit b: GraphDSL.Builder[Unit] =>
       import GraphDSL.Implicits._
 
       val collect = b.add(Flow[Message].collect[String]({
@@ -143,9 +144,8 @@ object Flows {
 
       zip.out ~> mapToMessage
 
-      (collect.inlet, mapToMessage.outlet)
+      FlowShape(collect.in, mapToMessage.out)
     })
-    */
 
   /**
    * When the flow is materialized we don't really just have to respond with a single
