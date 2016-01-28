@@ -44,7 +44,7 @@ object WSServer extends App {
   // vmactor: will start sending messages to the router, which will pass them on to any
   // connected routee
   val router: ActorRef = system.actorOf(Props[RouterActor], "router")
-  val vmactor: ActorRef = system.actorOf(Props(classOf[VMActor], router, 2.seconds, 20.milliseconds))
+  val vmactor: ActorRef = system.actorOf(Props(classOf[VMActor], router, 2.seconds, 3.second))
 
   // Bind to an HTTP port and handle incoming messages.
   // With the custom extractor we're always certain the header contains
@@ -57,7 +57,7 @@ object WSServer extends App {
       case WSRequest(req@HttpRequest(GET, Uri.Path("/echo"), _, _, _)) => handleWith(req, Flows.echoFlow)
       case WSRequest(req@HttpRequest(GET, Uri.Path("/graph"), _, _, _)) => handleWith(req, Flows.graphFlow)
       case WSRequest(req@HttpRequest(GET, Uri.Path("/graphWithSource"), _, _, _)) => handleWith(req, Flows.graphFlowWithExtraSource)
-  //    case WSRequest(req@HttpRequest(GET, Uri.Path("/stats"), _, _, _)) => handleWith(req, Flows.graphFlowWithStats(router))
+      case WSRequest(req@HttpRequest(GET, Uri.Path("/stats"), _, _, _)) => handleWith(req, Flows.graphFlowWithStats(router))
       case _: HttpRequest => HttpResponse(400, entity = "Invalid websocket request")
 
     },
@@ -196,31 +196,33 @@ object Flows {
    *  2. the VMActor sends messages at an interval to the router.
    *  3. The router next sends the message to this source which injects it into the flow
    */
- /* def graphFlowWithStats(router: ActorRef): Flow[Message, Message, Unit] = {
-    Flow() { implicit b =>
-      import FlowGraph.Implicits._
+ def graphFlowWithStats(router: ActorRef): Flow[Message, Message, Unit] =
+    Flow.fromGraph(GraphDSL.create() { implicit b: GraphDSL.Builder[Unit] =>
+      import GraphDSL.Implicits._
 
       // create an actor source
-      val source = Source.actorPublisher[String](Props(classOf[VMStatsPublisher],router))
+      val source = Source.actorPublisher[String](Props(classOf[VMStatsPublisher], router))
 
       // Graph elements we'll use
       val merge = b.add(Merge[String](2))
-      val filter = b.add(Flow[String].filter(_ => false))
+      val filter = b.add(Flow[String].filter(_ != ""))
 
-      // convert to int so we can connect to merge
-      val mapMsgToString = b.add(Flow[Message].map[String] { msg => "" })
-      val mapStringToMsg = b.add(Flow[String].map[Message]( x => TextMessage.Strict(x)))
+      // convert to string so we can connect to merge
+      val mapMsgToString = b.add(Flow[Message].map[String] {
+        case msg: TextMessage.Strict => msg.text.reverse
+        case _ => ""
+      })
+      val mapStringToMsg = b.add(Flow[String].map[Message](x => TextMessage.Strict(x)))
 
       val statsSource = b.add(source)
 
       // connect the graph
-      mapMsgToString ~> filter ~> merge // this part of the merge will never provide msgs
+      mapMsgToString ~> filter ~> merge
                    statsSource ~> merge ~> mapStringToMsg
 
       // expose ports
-      (mapMsgToString.inlet, mapStringToMsg.outlet)
-    }
-  }*/
+      FlowShape(mapMsgToString.in, mapStringToMsg.out)
+    })
 
   @annotation.tailrec
   def randomPrintableString(length: Int, start: String = ""): String = {

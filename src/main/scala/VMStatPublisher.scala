@@ -91,11 +91,11 @@ class VMStatsPublisher(router: ActorRef) extends ActorPublisher[String] {
  * Just a simple router, which collects some VM stats and sends them to the provided
  * actorRef each interval.
  */
-class VMActor(router: ActorRef, delay: FiniteDuration, interval: FiniteDuration) extends Actor {
+class VMActor(router: ActorRef, initialDelay: FiniteDuration, interval: FiniteDuration) extends Actor {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
-  context.system.scheduler.schedule(delay, interval) {
+  context.system.scheduler.schedule(initialDelay, interval) {
     val json = Json.obj( "stats" -> getStats.map(el => el._1 -> el._2))
     router ! Json.prettyPrint(json)
   }
