@@ -1,10 +1,5 @@
-# Create a reactive websocket server with akka-streams
+# akka-http websocket examples
 
-Sample code from the blog post by @josdirksen.
-
-http://www.smartjava.org/content/create-reactive-websocket-server-akka-streams
-
-My changes:
-
-* upgrade akka-stream up to 2.0.2
-* add some response to graph flow examples
+example | scala | akka | akka-http | mm-yyyy | description
+------- | ----- | ---- | --------- | ------- | -----------
+[create-reactive-websocket-server-akka-streams](create-reactive-websocket-server-akka-streams) | 2.11.7 | 2.4.1 | 2.0.2 (experimental) | 01-2016 | outdated, with deprectated ActorPublisher
